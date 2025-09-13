@@ -1,0 +1,105 @@
+Awesome, Alex. Here’s your **tight step-by-step** from laptop → GitHub → dev → prod.
+
+# 0) Prereqs (one-time)
+
+* Branches: `dev` (staging), `main` (prod)
+* Repo: `origin` → GitHub
+* Servers:
+
+  * **dev**: `/home/alex/admin-dev`, domain `rafactory.raworkshop.bg`
+  * **prod**: `/var/www/admin`, domain `admin.raworkshop.bg`
+* Deploy script on server: `/usr/local/bin/deploy.sh` (already set)
+* `.env` files live in:
+
+  * dev → `/home/alex/admin-dev/shared/.env`
+  * prod → `/var/www/admin/shared/.env`
+
+---
+
+# 1) Code locally → **commit & push to dev**
+
+```bash
+# on your laptop, in project root
+git checkout dev
+git status
+git add -A
+git commit -m "feat: your change"
+git push origin dev
+```
+
+---
+
+# 2) **Deploy to DEV (staging)**
+
+```bash
+ssh alex@ra-factory-bg-2
+sudo /usr/local/bin/deploy.sh dev
+```
+
+What it does: pulls `dev`, installs deps, runs **migrate on dev DB**, caches, flips `current`.
+
+**Check:**
+
+```bash
+curl -fsS https://rafactory.raworkshop.bg/health
+# or open the site in browser
+```
+
+---
+
+# 3) If OK → **promote to PROD**
+
+On your laptop:
+
+```bash
+git checkout main
+git pull origin main
+git merge --ff-only dev
+git push origin main
+```
+
+Deploy on server:
+
+```bash
+ssh alex@ra-factory-bg-2
+sudo /usr/local/bin/deploy.sh prod
+```
+
+What it does: backs up **prod DB**, runs **migrate on prod DB**, caches, flips `current`.
+
+**Check:**
+
+```bash
+curl -fsS https://admin.raworkshop.bg/health
+# or open the site
+```
+
+---
+
+# 4) Rollback (quick)
+
+```bash
+# repoint to previous release
+sudo bash -lc 'cd /var/www/admin/releases && PREV=$(ls -1dt */|sed -n "2p"|tr -d "/"); ln -sfn "/var/www/admin/releases/$PREV" "/var/www/admin/current"'
+sudo systemctl reload php8.3-fpm
+php /var/www/admin/current/artisan queue:restart || true
+```
+
+---
+
+# 5) Tiny checklist each deploy
+
+* Dev: push to `dev` → `deploy.sh dev` → test
+* Prod: merge `dev → main` → `deploy.sh prod` → check `/health`
+* Never copy dev DB to prod. **Migrations** move schema.
+
+---
+
+# 6) Fast troubleshooting
+
+* **401 on dev** → you left basic auth on; create htpasswd or remove it.
+* **Permission denied (git)** → add the server’s SSH deploy key to GitHub.
+* **500 after deploy** → `php artisan optimize:clear` in the new release; check `/var/log/nginx/*` and `storage/logs/laravel.log`.
+* **Migration stuck** → check DB user perms; run `php artisan migrate:status`.
+
+Want a **one-command promote script** that merges `dev → main` and deploys prod automatically? **Yes/No**
