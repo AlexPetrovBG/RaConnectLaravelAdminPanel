@@ -17,16 +17,27 @@ function ExecStr([string]$cmd) {
 
 # 1) Ensure git repo; switch to dev if needed
 ExecStr "git rev-parse --is-inside-work-tree"
-$branch = (git rev-parse --abbrev-ref HEAD).Trim()
-if ($branch -ne "dev") {
-  ExecStr "git checkout dev"
+$branchOutput = git rev-parse --abbrev-ref HEAD
+if ($branchOutput) {
+  $branch = $branchOutput.Trim()
+  if ($branch -ne "dev") {
+    ExecStr "git checkout dev"
+  }
+} else {
+  Write-Host "Error: Could not determine current git branch" -ForegroundColor Red
+  exit 1
 }
 
 # 2) Commit if there are changes
-$dirty = (git status --porcelain).Trim()
-if ($dirty) {
-  ExecStr "git add -A"
-  & git commit -m $Message
+$dirtyOutput = git status --porcelain
+if ($dirtyOutput) {
+  $dirty = $dirtyOutput.Trim()
+  if ($dirty) {
+    ExecStr "git add -A"
+    & git commit -m $Message
+  } else {
+    Write-Host "No local changes to commit." -ForegroundColor Green
+  }
 } else {
   Write-Host "No local changes to commit." -ForegroundColor Green
 }
