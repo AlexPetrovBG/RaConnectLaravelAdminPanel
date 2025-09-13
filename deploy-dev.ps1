@@ -37,7 +37,8 @@ Exec "git push origin dev"
 # 4) SSH to server and run deploy
 $sshCmd = "sudo /usr/local/bin/deploy.sh dev"
 Write-Host "Deploying on DEV server..." -ForegroundColor Yellow
-Exec "ssh $ServerUser@$ServerHost `"$sshCmd`""
+Write-Host "Note: You may be prompted for sudo password on the server" -ForegroundColor Yellow
+Exec "ssh -t $ServerUser@$ServerHost `"$sshCmd`""
 
 # 5) Health check
 try {
