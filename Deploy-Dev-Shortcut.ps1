@@ -17,5 +17,15 @@ if (Test-Path $ScriptPath) {
 }
 
 # Keep the window open to see results
-Write-Host "`nPress any key to close this window..." -ForegroundColor Cyan
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+Write-Host "`nDeployment completed. Window will stay open for you to copy text." -ForegroundColor Green
+Write-Host "Close this window manually when done." -ForegroundColor Cyan
+Write-Host "`nPress Ctrl+C to copy selected text, or close the window when finished." -ForegroundColor Yellow
+
+# Keep the window open indefinitely until manually closed
+try {
+    while ($true) {
+        Start-Sleep -Seconds 1
+    }
+} catch {
+    # Window was closed
+}
