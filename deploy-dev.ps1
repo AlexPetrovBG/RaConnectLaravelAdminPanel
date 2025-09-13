@@ -4,45 +4,45 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# ---- EDIT THESE VALUES ----
+# ---- EDIT THESE ----
 $ServerUser = "alex"
-$ServerHost = "ubuntu-server"                 # change to your real host
+$ServerHost = "ubuntu-server"   # hostname or IP of your server
 $HealthUrl  = "https://rafactory.raworkshop.bg/health"
-# ---------------------------
+# --------------------
 
-function Exec($cmd) {
+function ExecStr([string]$cmd) {
   Write-Host "› $cmd" -ForegroundColor Cyan
   & $env:ComSpec /c $cmd | Out-Host
 }
 
-# 1) Ensure we're in a git repo and on 'dev'
-Exec "git rev-parse --is-inside-work-tree"
+# 1) Ensure git repo; switch to dev if needed
+ExecStr "git rev-parse --is-inside-work-tree"
 $branch = (git rev-parse --abbrev-ref HEAD).Trim()
 if ($branch -ne "dev") {
-  Exec "git checkout dev"
+  ExecStr "git checkout dev"
 }
 
 # 2) Commit if there are changes
 $dirty = (git status --porcelain).Trim()
 if ($dirty) {
-  Exec "git add -A"
-  Exec "git commit -m `"$Message`""
+  ExecStr "git add -A"
+  & git commit -m $Message
 } else {
   Write-Host "No local changes to commit." -ForegroundColor Green
 }
 
 # 3) Push dev to origin
-Exec "git push origin dev"
+ExecStr "git push origin dev"
 
 # 4) SSH to server and run deploy
 $sshCmd = "sudo /usr/local/bin/deploy.sh dev"
-Write-Host "Deploying on DEV server..." -ForegroundColor Yellow
-Write-Host "Note: You may be prompted for sudo password on the server" -ForegroundColor Yellow
-Exec "ssh -t $ServerUser@$ServerHost `"$sshCmd`""
+Write-Host "Deploying on DEV server" -ForegroundColor Yellow
+Write-Host "   (you may be asked for your SSH/sudo password)" -ForegroundColor Yellow
+& ssh -t "$ServerUser@$ServerHost" "$sshCmd"
 
 # 5) Health check
 try {
-  $resp = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 15
+  $resp = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 20
   if ($resp.StatusCode -ge 200 -and $resp.StatusCode -lt 300) {
     Write-Host "Health OK: $HealthUrl" -ForegroundColor Green
   } else {
