@@ -4,6 +4,19 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Ensure running from project directory (merged behavior from Deploy-Dev-Shortcut.ps1)
+$ProjectPath = "C:\Projects\RaConnectLaravelAdminPanel"
+if (Test-Path $ProjectPath) {
+  Write-Host "Changing to project directory: $ProjectPath" -ForegroundColor Cyan
+  Set-Location $ProjectPath
+  Write-Host "Current directory: $(Get-Location)" -ForegroundColor Cyan
+} else {
+  Write-Host "Error: Project not found at $ProjectPath" -ForegroundColor Red
+  Write-Host "Please ensure the project is located at: $ProjectPath" -ForegroundColor Yellow
+  exit 1
+}
+Write-Host "Starting deployment script..." -ForegroundColor Yellow
+
 # ---- EDIT THESE ----
 $ServerUser = "alex"
 $ServerHost = "ubuntu-server"   # hostname or IP of your server
