@@ -45,9 +45,9 @@ if ($dirtyOutput) {
 # 3) Push dev to origin
 ExecStr "git push origin dev"
 
-# 4) SSH to server and run deploy as alex user from workspace
-$sshCmd = "cd /home/alex/admin-dev && whoami && ./deploy.sh dev"
-Write-Host "Deploying on DEV server as alex user from workspace" -ForegroundColor Yellow
+# 4) SSH to server and run deploy as alex user from root directory
+$sshCmd = "cd /home/alex && whoami && ./deploy.sh dev"
+Write-Host "Deploying on DEV server as alex user from root directory" -ForegroundColor Yellow
 Write-Host "   (no sudo password required)" -ForegroundColor Green
 & ssh -t "$ServerUser@$ServerHost" "$sshCmd"
 
