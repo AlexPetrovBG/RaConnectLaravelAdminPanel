@@ -30,26 +30,37 @@ try {
   if ($dirtyDev) { Git add -A; Git commit -m "$Message" }
   Git push origin dev
 
-  # Fast-forward main from dev
-  Git checkout main
-  Git pull --ff-only origin main
-  Git merge --ff-only origin/dev
-  Git push origin main
+  # Fast-forward remote main from dev without switching working tree (avoid Windows deletion prompts)
+  $shouldDeploy = $true
+  Git fetch origin
+  Git merge-base --is-ancestor origin/main origin/dev
+  if ($LASTEXITCODE -eq 0) {
+    Git push origin origin/dev:refs/heads/main
+  } else {
+    Write-Host "Skip: origin/main is ahead or diverged; not fast-forwarding." -ForegroundColor Yellow
+    $shouldDeploy = $false
+  }
 
   # Deploy prod
-  & ssh -t "$ServerUser@$ServerHost" "cd /home/alex && ./deploy.sh prod"
+  if ($shouldDeploy) {
+    & ssh -t "$ServerUser@$ServerHost" "cd /home/alex && ./deploy.sh prod"
+  } else {
+    Write-Host "Deployment skipped due to non-FF remote main." -ForegroundColor Yellow
+  }
 
   # Health
-  try {
-    $resp = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 20
-    if ($resp.StatusCode -ge 200 -and $resp.StatusCode -lt 300) {
-      Write-Host "PROD health OK" -ForegroundColor Green
-    } else {
-      Write-Host "PROD health returned $($resp.StatusCode)" -ForegroundColor Yellow
-    }
-  } catch { Write-Host "PROD health failed: $($_.Exception.Message)" -ForegroundColor Yellow }
+  if ($shouldDeploy) {
+    try {
+      $resp = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 20
+      if ($resp.StatusCode -ge 200 -and $resp.StatusCode -lt 300) {
+        Write-Host "PROD health OK" -ForegroundColor Green
+      } else {
+        Write-Host "PROD health returned $($resp.StatusCode)" -ForegroundColor Yellow
+      }
+    } catch { Write-Host "PROD health failed: $($_.Exception.Message)" -ForegroundColor Yellow }
 
-  Write-Host "PROD deploy complete." -ForegroundColor Green
+    Write-Host "PROD deploy complete." -ForegroundColor Green
+  }
 } catch {
   Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
 }
