@@ -77,3 +77,16 @@ try {
 }
 
 Write-Host "DEV deploy complete." -ForegroundColor Green
+
+# Keep the window open to see results (merged from Deploy-Dev-Shortcut.ps1)
+Write-Host "`nDeployment completed. Window will stay open for you to copy text." -ForegroundColor Green
+Write-Host "Close this window manually when done." -ForegroundColor Cyan
+Write-Host "`nPress Ctrl+C to copy selected text, or close the window when finished." -ForegroundColor Yellow
+
+try {
+    while ($true) {
+        Start-Sleep -Seconds 1
+    }
+} catch {
+    # Window was closed
+}
