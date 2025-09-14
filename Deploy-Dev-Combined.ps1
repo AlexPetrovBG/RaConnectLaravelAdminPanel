@@ -11,21 +11,18 @@ Write-Host "=================================" -ForegroundColor Cyan
 # Get the current user's desktop path
 $DesktopPath = [Environment]::GetFolderPath("Desktop")
 $ProjectPath = "C:\Projects\RaConnectLaravelAdminPanel"
-$ScriptPath = Join-Path $ProjectPath "deploy-dev.ps1"
 
-# Check if the script exists
-if (Test-Path $ScriptPath) {
-    Write-Host "Found script at: $ScriptPath" -ForegroundColor Green
+# Check if the project directory exists
+if (Test-Path $ProjectPath) {
+    Write-Host "Found project at: $ProjectPath" -ForegroundColor Green
     Write-Host "Changing to project directory: $ProjectPath" -ForegroundColor Cyan
     
-    # Change to the project directory and run the script
+    # Change to the project directory
     Set-Location $ProjectPath
     Write-Host "Current directory: $(Get-Location)" -ForegroundColor Cyan
     
     try {
-        Write-Host "Starting deployment script..." -ForegroundColor Yellow
-        
-        # START OF DEPLOY-DEV.PS1 CONTENT
+        Write-Host "Starting deployment process..." -ForegroundColor Yellow
 
         $ErrorActionPreference = "Stop"
 
@@ -91,14 +88,14 @@ if (Test-Path $ScriptPath) {
         Write-Host "DEV deploy complete." -ForegroundColor Green
         # END OF DEPLOY-DEV.PS1 CONTENT
         
-        Write-Host "Deployment script completed successfully!" -ForegroundColor Green
+        Write-Host "Deployment process completed successfully!" -ForegroundColor Green
     } catch {
-        Write-Host "Error running deployment script: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Error during deployment: $($_.Exception.Message)" -ForegroundColor Red
         Write-Host "Full error details:" -ForegroundColor Red
         Write-Host $_.Exception -ForegroundColor Red
     }
 } else {
-    Write-Host "Error: deploy-dev.ps1 not found at $ScriptPath" -ForegroundColor Red
+    Write-Host "Error: Project directory not found at $ProjectPath" -ForegroundColor Red
     Write-Host "Please ensure the project is located at: $ProjectPath" -ForegroundColor Yellow
 }
 
