@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 # ---- EDIT THESE ----
 $ServerUser = "alex"
 $ServerHost = "ubuntu-server"   # hostname or IP of your server
-$HealthUrl  = "https://rafactory.raworkshop.bg/health"
+$HealthUrl  = "https://rafactory.raworkshop.bg"
 # --------------------
 
 function ExecStr([string]$cmd) {
