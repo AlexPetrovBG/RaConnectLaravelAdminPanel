@@ -27,7 +27,7 @@ try {
 
   # Make sure dev is pushed
   Git checkout dev
-  $dirtyDev = (Git status --porcelain).Trim()
+  $dirtyDev = ((Git status --porcelain) -join "`n").Trim()
   if ($dirtyDev) { Git add -A; Git commit -m "$Message" }
   Git push origin dev
 
