@@ -11,7 +11,8 @@ $HealthUrl  = "https://admin.raworkshop.bg/health"
 # Resolve git.exe explicitly to avoid recursion (PowerShell function names are case-insensitive)
 $gitExe = (Get-Command git.exe -ErrorAction Stop).Source
 function Git {
-  & $gitExe @args
+  # Disable auto background maintenance/gc to avoid interactive prompts and filesystem deletes
+  & $gitExe -c gc.auto=0 -c maintenance.auto=false -c gc.autoDetach=false @args
 }
 Write-Host "Starting deployment script..." -ForegroundColor Yellow
 
