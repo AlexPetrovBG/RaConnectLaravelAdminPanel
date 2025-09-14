@@ -45,10 +45,10 @@ if ($dirtyOutput) {
 # 3) Push dev to origin
 ExecStr "git push origin dev"
 
-# 4) SSH to server and run deploy
-$sshCmd = "sudo /usr/local/bin/deploy.sh dev"
-Write-Host "Deploying on DEV server" -ForegroundColor Yellow
-Write-Host "   (you may be asked for your SSH/sudo password)" -ForegroundColor Yellow
+# 4) SSH to server and run deploy as alex user
+$sshCmd = "whoami && /usr/local/bin/deploy.sh dev"
+Write-Host "Deploying on DEV server as alex user" -ForegroundColor Yellow
+Write-Host "   (no sudo password required)" -ForegroundColor Green
 & ssh -t "$ServerUser@$ServerHost" "$sshCmd"
 
 # 5) Health check
