@@ -43,4 +43,9 @@ class Project extends Model
     {
         return $this->hasMany(Piece::class);
     }
+
+    public function orders(): HasMany
+    {
+        return $this->hasMany(Order::class);
+    }
 }

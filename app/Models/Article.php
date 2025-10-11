@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Article extends Model
 {
@@ -58,5 +59,12 @@ class Article extends Model
     public function component(): BelongsTo
     {
         return $this->belongsTo(Component::class);
+    }
+
+    public function orders(): BelongsToMany
+    {
+        return $this->belongsToMany(Order::class, 'article_order')
+            ->withPivot(['quantity', 'price', 'is_requested', 'is_confirmed', 'is_delivered'])
+            ->withTimestamps();
     }
 }

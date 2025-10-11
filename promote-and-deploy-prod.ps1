@@ -6,7 +6,7 @@ $ProjectPath = "C:\Projects\RaConnectLaravelAdminPanel"
 # --- server ---
 $ServerUser = "alex"
 $ServerHost = "ubuntu-server"
-$HealthUrl  = "https://admin.raworkshop.bg/health"
+$HealthUrl  = "https://admin.raworkshop.bg"
 
 # Resolve git.exe explicitly to avoid recursion (PowerShell function names are case-insensitive)
 $gitExe = (Get-Command git.exe -ErrorAction Stop).Source

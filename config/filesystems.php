@@ -60,6 +60,20 @@ return [
             'report' => false,
         ],
 
+        'tenant' => [
+            'driver' => 'local',
+            'root' => function () {
+                $tenantId = tenant('id');
+                if (!$tenantId) {
+                    throw new \Exception('No tenant context available for file storage');
+                }
+                return storage_path('app/tenant-' . $tenantId);
+            },
+            'serve' => true,
+            'throw' => false,
+            'report' => false,
+        ],
+
     ],
 
     /*
