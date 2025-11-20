@@ -62,13 +62,7 @@ return [
 
         'tenant' => [
             'driver' => 'local',
-            'root' => function () {
-                $tenantId = tenant('id');
-                if (!$tenantId) {
-                    throw new \Exception('No tenant context available for file storage');
-                }
-                return storage_path('app/tenant-' . $tenantId);
-            },
+            'root' => storage_path('app/tenants'), // Placeholder: closures are not allowed in config cache
             'serve' => true,
             'throw' => false,
             'report' => false,
