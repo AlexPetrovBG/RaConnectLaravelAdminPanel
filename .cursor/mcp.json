@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "sqlite": {
+      "command": "mcp-server-sqlite",
+      "args": [
+        "--db-path",
+        "C:\\Projects\\RaConnectLaravelAdminPanel\\database\\database.sqlite"
+      ]
+    },
+    "fetch": {
+      "command": "mcp-server-fetch",
+      "args": []
+    }
+  }
+}
+
+

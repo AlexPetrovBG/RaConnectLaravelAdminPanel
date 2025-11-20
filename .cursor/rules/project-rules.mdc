@@ -1,0 +1,984 @@
+---
+alwaysApply: false
+---
+# RaConnect CRM - Project-Specific Development Rules
+# Workflow, Priorities, and Project Conventions
+
+---
+
+## PROJECT OVERVIEW
+
+**Name:** RaConnect Laravel Admin Panel  
+**Purpose:** Multi-tenant construction/installation CRM system  
+**Status:** 50-60% complete - Business logic migration in progress  
+**Tech Stack:** Laravel 12, Filament v4, Stancl/Tenancy, PostgreSQL  
+**Architecture:** Database-per-tenant multi-tenancy  
+
+---
+
+## CRITICAL PROJECT CONSTRAINTS
+
+### 1. NEVER Break Multi-Tenant Isolation
+```php
+// ❌ ABSOLUTELY FORBIDDEN - Never add tenant_id columns
+Schema::table('orders', function (Blueprint $table) {
+    $table->foreignId('tenant_id'); // ❌ NEVER!
+});
+
+// ❌ FORBIDDEN - Never query across tenants
+$allOrders = DB::connection('mysql')->table('orders')->get(); // ❌ NEVER!
+
+// ✅ ALWAYS - Trust database switching
+tenancy()->initialize($tenant);
+$orders = Order::all(); // Automatically scoped to tenant DB
+
+// ✅ ALWAYS - Test tenant isolation for every new feature
+public function test_tenant_isolation_for_new_feature(): void
+{
+    // Create data in tenant 1
+    // Switch to tenant 2
+    // Verify tenant 2 cannot access tenant 1 data
+}
+```
+
+### 2. PRESERVE Business Logic from Old System
+```php
+// The old system (Laravel 5.8) had rich business logic.
+// When migrating features, ALWAYS check old_version_source/ for:
+// - Calculation formulas
+// - Validation rules
+// - Workflow automation
+// - Event handling
+
+// Example: Order montage time calculation
+// ✅ CORRECT - Replicate old logic exactly
+protected function montageTime(): Attribute
+{
+    // Formula from old_version_source/app/Order.php:636
+    return Attribute::make(
+        get: fn () => $this->articles->reduce(function($carry, $art) {
+            return $carry + $art->pivot->quantity * $art->pivot->montage_time;
+        }, 0),
+    );
+}
+
+// ❌ WRONG - Don't guess or simplify calculations
+protected function montageTime(): Attribute
+{
+    return Attribute::make(
+        get: fn () => $this->articles->count() * 8, // ❌ Oversimplified!
+    );
+}
+```
+
+### 3. Follow Implementation Plan Priorities
+```
+CURRENT PHASE: Business Logic Migration (Priority 1)
+
+DO NOW (Critical Path):
+1. Order calculation methods (montage_time, debt, balance)
+2. Article inventory tracking (reserved, requested, free counts)
+3. Financial aggregation (revenue, expense tracking)
+4. Workflow automation (auto-numbering, status syncing)
+
+DO NEXT (High Priority):
+5. Schedule calendar view
+6. Order info modal
+7. Financial dashboard widgets
+
+DO LATER (Medium Priority):
+8. Advanced UI (drag-drop, inline editing)
+9. Reporting system
+10. Super admin panel
+
+DO EVENTUALLY (Low Priority):
+11. Email notifications
+12. Google Maps integration
+13. Multi-language support
+```
+
+---
+
+## FILE ORGANIZATION RULES
+
+### Where to Put New Code
+
+```
+Business Logic:
+✅ app/Models/ - Simple accessors, relationships
+✅ app/Services/ - Complex calculations, multi-step processes
+✅ app/Observers/ - Model event handling (create, update, delete)
+✅ app/Policies/ - Authorization logic
+
+UI Layer:
+✅ app/Filament/Resources/ - CRUD interfaces
+✅ app/Filament/Pages/ - Custom pages (dashboard, calendar, reports)
+✅ app/Filament/Widgets/ - Dashboard components
+✅ resources/views/components/ - Reusable Blade components
+
+API Layer:
+✅ app/Http/Controllers/Api/ - API endpoints
+✅ app/Http/Resources/ - JSON transformers
+✅ routes/api.php - API routes (tenant-aware via header)
+
+Database:
+✅ database/migrations/tenant/ - Tenant database tables
+✅ database/migrations/ - Central database tables (tenants, domains)
+✅ database/seeders/ - Default data (roles, permissions, categories)
+
+Multi-Tenancy:
+✅ app/Services/TenantFileService.php - Tenant file operations
+✅ routes/tenant.php - Tenant-specific routes
+✅ config/tenancy.php - Multi-tenancy configuration
+```
+
+### File Naming Conventions
+
+```
+Models:          Order.php, ManDay.php (singular, PascalCase)
+Services:        OrderFinancialService.php (*Service suffix)
+Observers:       OrderObserver.php (*Observer suffix)
+Policies:        OrderPolicy.php (*Policy suffix)
+Controllers:     OrderController.php (*Controller suffix)
+Resources:       OrderResource.php (Filament), OrderResource.php (API)
+Migrations:      2025_10_23_create_orders_table.php (date_action.php)
+Tests:           OrderTest.php (Feature/), OrderCalculationTest.php (Unit/)
+```
+
+---
+
+## DATABASE MIGRATION RULES
+
+### Migration Location Rules
+```php
+// ✅ Tenant tables go in database/migrations/tenant/
+// These tables are created in EACH tenant database
+database/migrations/tenant/
+    - create_orders_table.php
+    - create_clients_table.php
+    - create_documents_table.php
+
+// ✅ Central tables go in database/migrations/
+// These tables exist ONLY in the central database
+database/migrations/
+    - create_tenants_table.php
+    - create_domains_table.php
+    - create_super_admins_table.php
+
+// ❌ NEVER put tenant tables in central migrations
+// ❌ NEVER put central tables in tenant migrations
+```
+
+### Migration Best Practices
+```php
+// ✅ ALWAYS add indexes for foreign keys
+Schema::create('orders', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('client_id')->constrained()->onDelete('cascade');
+    // constrained() automatically adds index
+});
+
+// ✅ ALWAYS make nullable what should be nullable
+$table->date('install_date')->nullable(); // Not always known at creation
+$table->decimal('price_to_customer', 10, 2)->nullable(); // May not be set yet
+
+// ✅ ALWAYS use meaningful default values
+$table->boolean('is_confirmed')->default(false);
+$table->string('status')->default('pending');
+
+// ✅ NEVER delete migrations that ran in production
+// Instead, create a new migration to modify the table
+
+// ✅ ALWAYS provide down() method
+public function down(): void
+{
+    Schema::dropIfExists('orders');
+}
+```
+
+---
+
+## TESTING REQUIREMENTS
+
+### Required Tests for Every Feature
+
+```php
+// 1. Feature Test - End-to-end workflow
+// tests/Feature/OrderManagementTest.php
+public function test_user_can_create_order_with_articles(): void
+{
+    $user = User::factory()->create();
+    $client = Client::factory()->create();
+    
+    $this->actingAs($user)
+        ->post('/admin/orders', [
+            'number' => 'ORD-001',
+            'client_id' => $client->id,
+            // ...
+        ])
+        ->assertRedirect();
+    
+    $this->assertDatabaseHas('orders', ['number' => 'ORD-001']);
+}
+
+// 2. Unit Test - Business logic
+// tests/Unit/OrderCalculationTest.php
+public function test_calculates_montage_time_from_articles(): void
+{
+    $order = Order::factory()->create();
+    $article = Article::factory()->create();
+    
+    $order->articles()->attach($article, [
+        'quantity' => 2,
+        'montage_time' => 3.5,
+    ]);
+    
+    $this->assertEquals(7.0, $order->montage_time);
+}
+
+// 3. Tenant Isolation Test - MANDATORY for all data access
+// tests/Feature/TenantIsolationTest.php
+public function test_orders_are_isolated_between_tenants(): void
+{
+    $tenant1 = Tenant::factory()->create();
+    $tenant2 = Tenant::factory()->create();
+    
+    tenancy()->initialize($tenant1);
+    $order1 = Order::factory()->create();
+    
+    tenancy()->initialize($tenant2);
+    $this->assertEquals(0, Order::count());
+    $this->assertDatabaseMissing('orders', ['id' => $order1->id]);
+}
+```
+
+### Test Coverage Goals
+```
+Minimum Required Coverage:
+- Business calculations: 100%
+- Authorization policies: 100%
+- Tenant isolation: 100%
+- API endpoints: 90%
+- Feature workflows: 80%
+
+Run tests:
+php artisan test                    # All tests
+php artisan test --filter=Order     # Specific test
+php artisan test --coverage         # With coverage report
+```
+
+---
+
+## FILAMENT RESOURCE CONVENTIONS
+
+### Resource Structure
+```php
+namespace App\Filament\Resources;
+
+class OrderResource extends Resource
+{
+    protected static ?string $model = Order::class;
+    
+    // ✅ ALWAYS define navigation
+    protected static ?string $navigationIcon = 'heroicon-o-shopping-bag';
+    protected static ?string $navigationGroup = 'Sales';
+    protected static ?int $navigationSort = 1;
+    
+    // ✅ ALWAYS implement form()
+    public static function form(Schema $schema): Schema
+    {
+        return $schema->schema([
+            // Group related fields
+            Forms\Components\Section::make('Order Details')
+                ->schema([
+                    Forms\Components\TextInput::make('number'),
+                    Forms\Components\Textarea::make('description'),
+                ]),
+            
+            Forms\Components\Section::make('Relationships')
+                ->schema([
+                    Forms\Components\Select::make('client_id')
+                        ->relationship('client', 'name')
+                        ->searchable()
+                        ->required(),
+                ]),
+        ]);
+    }
+    
+    // ✅ ALWAYS implement table()
+    public static function table(Table $table): Table
+    {
+        return $table
+            ->columns([
+                Tables\Columns\TextColumn::make('number')
+                    ->searchable()
+                    ->sortable(),
+                // Add badge for status
+                Tables\Columns\BadgeColumn::make('status')
+                    ->colors([
+                        'danger' => 'requested',
+                        'warning' => 'confirmed',
+                        'success' => 'finished',
+                    ]),
+            ])
+            ->filters([
+                Tables\Filters\SelectFilter::make('status'),
+                Tables\Filters\Filter::make('created_at')
+                    ->form([
+                        Forms\Components\DatePicker::make('created_from'),
+                        Forms\Components\DatePicker::make('created_until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['created_from'],
+                                fn (Builder $query, $date): Builder => $query->whereDate('created_at', '>=', $date),
+                            )
+                            ->when(
+                                $data['created_until'],
+                                fn (Builder $query, $date): Builder => $query->whereDate('created_at', '<=', $date),
+                            );
+                    }),
+            ])
+            ->actions([
+                Tables\Actions\ViewAction::make(),
+                Tables\Actions\EditAction::make(),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make(),
+                ]),
+            ]);
+    }
+    
+    // ✅ ALWAYS define pages
+    public static function getPages(): array
+    {
+        return [
+            'index' => Pages\ListOrders::route('/'),
+            'create' => Pages\CreateOrder::route('/create'),
+            'view' => Pages\ViewOrder::route('/{record}'),
+            'edit' => Pages\EditOrder::route('/{record}/edit'),
+        ];
+    }
+    
+    // ✅ ADD authorization
+    public static function canViewAny(): bool
+    {
+        return auth()->user()->hasPermissionTo('orders.view');
+    }
+}
+```
+
+### Custom Page Patterns
+```php
+// ✅ Custom pages go in app/Filament/Pages/
+namespace App\Filament\Pages;
+
+class ScheduleCalendar extends Page
+{
+    protected static ?string $navigationIcon = 'heroicon-o-calendar';
+    protected static ?string $navigationGroup = 'Schedule';
+    protected static string $view = 'filament.pages.schedule-calendar';
+    
+    // Add custom properties
+    public $selectedDate;
+    public $montages;
+    
+    public function mount(): void
+    {
+        $this->selectedDate = now();
+        $this->loadMontages();
+    }
+    
+    protected function loadMontages(): void
+    {
+        $this->montages = Montage::whereDate('date', $this->selectedDate)
+            ->with(['user', 'order'])
+            ->get();
+    }
+}
+```
+
+---
+
+## API DEVELOPMENT RULES
+
+### API Route Organization
+```php
+// routes/api.php - Public endpoints (central database)
+Route::post('/login', [AuthController::class, 'login']);
+Route::post('/register', [AuthController::class, 'register']);
+
+// routes/api.php - Authenticated + Tenant-aware (via X-Tenant-ID header)
+Route::middleware(['auth:sanctum', 'tenant.header'])->group(function () {
+    Route::get('/orders', [OrderController::class, 'index']);
+    Route::post('/orders', [OrderController::class, 'store']);
+});
+
+// ✅ ALWAYS return API resources
+public function index(Request $request): JsonResponse
+{
+    $orders = Order::with(['client', 'place'])
+        ->paginate($request->get('per_page', 15));
+    
+    return OrderResource::collection($orders)
+        ->response()
+        ->setStatusCode(200);
+}
+
+// ✅ ALWAYS validate with Form Requests
+public function store(StoreOrderRequest $request): JsonResponse
+{
+    $order = Order::create($request->validated());
+    
+    return (new OrderResource($order))
+        ->response()
+        ->setStatusCode(201);
+}
+```
+
+### API Response Format
+```json
+// ✅ STANDARD format for success
+{
+    "data": {
+        "id": 1,
+        "number": "ORD-001",
+        "client": {
+            "id": 5,
+            "name": "John Doe"
+        }
+    }
+}
+
+// ✅ STANDARD format for errors
+{
+    "message": "Validation failed",
+    "errors": {
+        "client_id": ["The client field is required."]
+    }
+}
+
+// ✅ STANDARD format for collections
+{
+    "data": [...],
+    "links": {
+        "first": "...",
+        "last": "...",
+        "prev": null,
+        "next": "..."
+    },
+    "meta": {
+        "current_page": 1,
+        "total": 50
+    }
+}
+```
+
+---
+
+## SECURITY CHECKLIST
+
+### Before Committing Any Code
+```
+✅ Input validated (Form Request or manual validation)
+✅ Authorization checked (Policy or permission)
+✅ SQL injection prevented (use Eloquent or parameter binding)
+✅ XSS prevented (Blade {{ }} auto-escapes, use {!! !!} only when needed)
+✅ CSRF token included (forms, AJAX)
+✅ Mass assignment protected ($fillable defined)
+✅ Tenant isolation maintained (test written)
+✅ File uploads validated (size, type, malware scan if needed)
+✅ Sensitive data not logged
+✅ API rate limiting applied
+```
+
+### Permission Naming Convention
+```php
+// Format: {resource}.{action}
+Permission::create(['name' => 'orders.view']);
+Permission::create(['name' => 'orders.create']);
+Permission::create(['name' => 'orders.edit']);
+Permission::create(['name' => 'orders.delete']);
+Permission::create(['name' => 'orders.finish']); // Special action
+
+// Use in code
+if (auth()->user()->hasPermissionTo('orders.finish')) {
+    $order->update(['is_finished' => true]);
+}
+
+// Use in Filament resource
+public static function canEdit(Model $record): bool
+{
+    return auth()->user()->can('update', $record);
+}
+```
+
+---
+
+## GIT WORKFLOW
+
+### Branch Naming
+```
+main              - Production code (protected)
+dev               - Development branch (current work)
+feature/*         - New features (feature/order-calculations)
+fix/*             - Bug fixes (fix/tenant-isolation-bug)
+refactor/*        - Code improvements (refactor/extract-services)
+test/*            - Test additions (test/order-workflows)
+
+Examples:
+feature/montage-time-calculation
+fix/debt-calculation-rounding
+refactor/order-financial-service
+test/tenant-isolation-orders
+```
+
+### Commit Message Format
+```bash
+# Format: <type>(<scope>): <subject>
+
+# Types:
+feat     - New feature
+fix      - Bug fix
+refactor - Code restructuring
+test     - Adding tests
+docs     - Documentation
+style    - Code formatting
+perf     - Performance improvement
+chore    - Maintenance tasks
+
+# Examples:
+git commit -m "feat(orders): add montage time calculation from articles"
+git commit -m "fix(tenancy): resolve database switching race condition"
+git commit -m "refactor(services): extract financial logic to OrderFinancialService"
+git commit -m "test(orders): add tenant isolation tests for order CRUD"
+git commit -m "docs(readme): update installation instructions for multi-tenancy"
+```
+
+### Pull Request Checklist
+```
+Before creating PR:
+✅ All tests pass (php artisan test)
+✅ No linting errors (php artisan pint --test)
+✅ Migrations run successfully
+✅ Tenant isolation tested
+✅ Code documented where needed
+✅ Related issues referenced
+✅ Screenshots added (for UI changes)
+✅ Breaking changes noted
+
+PR Title Format:
+[TYPE] Brief description (#issue-number)
+
+Examples:
+[FEAT] Add order montage time calculation (#123)
+[FIX] Resolve tenant database switching bug (#124)
+```
+
+---
+
+## PERFORMANCE GUIDELINES
+
+### Database Query Optimization
+```php
+// ✅ ALWAYS eager load relationships
+$orders = Order::with([
+    'client.company',
+    'place',
+    'articles',
+    'user'
+])->get();
+
+// ✅ Use select() to limit columns
+$orders = Order::select(['id', 'number', 'client_id'])
+    ->with('client:id,name')
+    ->get();
+
+// ✅ Use chunk() for large datasets
+Order::chunk(100, function ($orders) {
+    foreach ($orders as $order) {
+        // Process order
+    }
+});
+
+// ❌ NEVER do this (N+1 problem)
+$orders = Order::all();
+foreach ($orders as $order) {
+    echo $order->client->name; // N queries!
+}
+```
+
+### Caching Strategy
+```php
+// ✅ Cache expensive queries (tenant-scoped)
+use Illuminate\Support\Facades\Cache;
+
+public function getOrderStatistics(): array
+{
+    return Cache::remember(
+        "tenant.{$this->id}.order_stats",
+        now()->addMinutes(15),
+        fn () => [
+            'total' => Order::count(),
+            'pending' => Order::where('is_finished', false)->count(),
+            'revenue' => Order::sum('price_to_customer'),
+        ]
+    );
+}
+
+// ✅ Invalidate cache on changes
+protected function invalidateOrderStatsCache(): void
+{
+    Cache::forget("tenant.{tenant('id')}.order_stats");
+}
+
+// Use in observer
+class OrderObserver
+{
+    public function created(Order $order): void
+    {
+        $this->invalidateOrderStatsCache();
+    }
+}
+```
+
+### Queue Long-Running Tasks
+```php
+// ✅ Queue tasks that take > 3 seconds
+use App\Jobs\GenerateOrderReport;
+
+public function generateReport(Order $order): void
+{
+    GenerateOrderReport::dispatch($order)
+        ->onQueue('reports');
+}
+
+// Job class
+class GenerateOrderReport implements ShouldQueue
+{
+    use Queueable, SerializesModels;
+    
+    public function __construct(
+        public Order $order
+    ) {}
+    
+    public function handle(): void
+    {
+        // Ensure tenant context
+        tenancy()->initialize(tenant());
+        
+        // Generate report...
+    }
+}
+```
+
+---
+
+## DEBUGGING & LOGGING
+
+### Debug Helpers
+```php
+// ✅ Use Laravel debug helpers
+dd($order);              // Dump and die
+dump($order);            // Dump and continue
+logger($order);          // Log to file
+
+// ✅ Use Telescope for debugging (install in dev)
+composer require laravel/telescope --dev
+php artisan telescope:install
+
+// ✅ Use Ray for debugging (optional, paid)
+// https://myray.app/
+ray($order)->label('Order Data');
+```
+
+### Logging Best Practices
+```php
+use Illuminate\Support\Facades\Log;
+
+// ✅ Log important business events
+Log::info('Order created', [
+    'order_id' => $order->id,
+    'user_id' => auth()->id(),
+    'tenant_id' => tenant('id'),
+]);
+
+// ✅ Log errors with context
+try {
+    $this->finishOrder($order);
+} catch (\Exception $e) {
+    Log::error('Failed to finish order', [
+        'order_id' => $order->id,
+        'error' => $e->getMessage(),
+        'trace' => $e->getTraceAsString(),
+    ]);
+    throw $e;
+}
+
+// ✅ Use appropriate log levels
+Log::emergency('System is down');
+Log::alert('Database connection failed');
+Log::critical('Payment processing failed');
+Log::error('Order creation failed');
+Log::warning('Low inventory for article');
+Log::notice('User logged in from new location');
+Log::info('Order status changed');
+Log::debug('SQL query executed: ' . $query);
+```
+
+---
+
+## DOCUMENTATION REQUIREMENTS
+
+### Code Documentation
+```php
+// ✅ Document complex business logic
+/**
+ * Calculate debt from customer for this order.
+ * 
+ * This represents the amount the customer still owes on the order.
+ * Formula: price_to_customer - SUM(paid revenue documents)
+ * 
+ * @return float Remaining debt in currency units (e.g., BGN)
+ */
+protected function debtFromCustomer(): Attribute
+{
+    return Attribute::make(
+        get: fn () => $this->price_to_customer - $this->paidFromCustomer,
+    );
+}
+
+// ✅ Document API endpoints
+/**
+ * @api {get} /api/orders List orders
+ * @apiName GetOrders
+ * @apiGroup Orders
+ * 
+ * @apiHeader {String} Authorization Bearer token
+ * @apiHeader {String} X-Tenant-ID Tenant identifier
+ * 
+ * @apiParam {Number} [page=1] Page number
+ * @apiParam {Number} [per_page=15] Items per page
+ * 
+ * @apiSuccess {Object[]} data List of orders
+ * @apiSuccess {Number} data.id Order ID
+ * @apiSuccess {String} data.number Order number
+ */
+```
+
+### README Updates
+```markdown
+# When adding new features, update README.md:
+
+## Installation
+## Configuration
+## Usage
+## Testing
+## API Documentation
+## Multi-Tenancy Guide
+## Deployment
+```
+
+---
+
+## DEPLOYMENT CHECKLIST
+
+### Before Deploying to Production
+```bash
+# 1. Run all tests
+php artisan test
+
+# 2. Check code style
+php artisan pint --test
+
+# 3. Clear and cache config
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+
+# 4. Run migrations (CAREFUL!)
+php artisan migrate --force
+
+# 5. Run tenant migrations
+php artisan tenants:migrate --force
+
+# 6. Optimize autoloader
+composer install --optimize-autoloader --no-dev
+
+# 7. Build frontend assets
+npm run build
+
+# 8. Queue workers running?
+php artisan queue:restart
+
+# 9. Check disk space
+df -h
+
+# 10. Backup database
+php artisan backup:run
+```
+
+---
+
+## COMMON PITFALLS TO AVOID
+
+### ❌ Don't Do This
+```php
+// 1. Don't add tenant_id to tenant tables
+$table->foreignId('tenant_id'); // ❌
+
+// 2. Don't query without eager loading
+Order::all()->each(fn($o) => $o->client->name); // ❌ N+1
+
+// 3. Don't use raw queries without parameterization
+DB::select("SELECT * FROM orders WHERE id = $id"); // ❌ SQL injection
+
+// 4. Don't put business logic in controllers
+public function store(Request $request) {
+    $order = Order::create($request->all());
+    $order->number = Order::max('number') + 1; // ❌ Should be in observer
+    $order->save();
+}
+
+// 5. Don't forget to test tenant isolation
+// Every new model needs isolation test! ❌ Missing test
+
+// 6. Don't commit without running tests
+git commit -m "fix" // ❌ No tests run
+
+// 7. Don't use $guarded = []
+protected $guarded = []; // ❌ Mass assignment vulnerability
+
+// 8. Don't skip validation
+Order::create($request->all()); // ❌ No validation
+
+// 9. Don't ignore type hints
+public function calculate($order) { // ❌ No types
+    return $order->total - $order->paid; // ❌ No return type
+}
+
+// 10. Don't put HTML in models
+public function getLink() {
+    return "<a href='/orders/$this->id'>$this->number</a>"; // ❌
+}
+```
+
+---
+
+## QUICK REFERENCE
+
+### Daily Development Checklist
+```
+Before starting work:
+✅ Pull latest from dev branch
+✅ Check implementation-plan.md for priorities
+✅ Review related code in old_version_source/
+
+While coding:
+✅ Follow .cursorrules coding standards
+✅ Write tests as you code
+✅ Test tenant isolation for data access
+✅ Document complex logic
+
+Before committing:
+✅ Run tests (php artisan test)
+✅ Fix linting (php artisan pint)
+✅ Write descriptive commit message
+✅ Reference related issues
+
+Before creating PR:
+✅ Rebase on dev if needed
+✅ Ensure all tests pass
+✅ Update documentation if needed
+✅ Add screenshots for UI changes
+```
+
+### Useful Commands
+```bash
+# Testing
+php artisan test                          # Run all tests
+php artisan test --filter=OrderTest       # Run specific test
+php artisan test --coverage               # Coverage report
+
+# Code Quality
+php artisan pint                          # Fix code style
+php artisan pint --test                   # Check code style
+
+# Database
+php artisan migrate:fresh --seed          # Reset database
+php artisan tenants:migrate               # Migrate all tenant DBs
+php artisan migrate:rollback              # Rollback last migration
+
+# Tenancy
+php artisan tenants:list                  # List all tenants
+php artisan tenants:seed                  # Seed all tenant DBs
+
+# Caching
+php artisan cache:clear                   # Clear cache
+php artisan config:clear                  # Clear config cache
+php artisan view:clear                    # Clear view cache
+
+# Filament
+php artisan make:filament-resource Order  # Create resource
+php artisan make:filament-page Dashboard  # Create page
+php artisan make:filament-widget Stats    # Create widget
+
+# Queue
+php artisan queue:work                    # Process jobs
+php artisan queue:restart                 # Restart workers
+
+# Development
+php artisan serve                         # Start dev server
+npm run dev                               # Watch frontend
+php artisan tinker                        # Laravel REPL
+```
+
+### Important File Locations
+```
+Business Logic Reference:   old_version_source/app/
+Implementation Plan:        implementation-plan.md
+Multi-Tenancy Guide:        multi-tenancy-implementation-plan.md
+Coding Standards:           .cursorrules
+Project Rules:              cursor_project_rules (this file)
+Environment:                .env
+Database Config:            config/database.php
+Tenancy Config:             config/tenancy.php
+```
+
+---
+
+## FINAL REMINDER
+
+**This is a PRODUCTION CRM system handling REAL business data.**
+
+Every line of code you write affects:
+- Construction companies managing their orders
+- Workers tracking their schedules
+- Clients receiving services
+- Financial records and calculations
+
+Quality is not optional. Security is not optional. Testing is not optional.
+
+**When in doubt:**
+1. Check old_version_source/ for reference
+2. Refer to .cursorrules for coding standards
+3. Read implementation-plan.md for priorities
+4. Write tests before implementing
+5. Ask for clarification before guessing
+
+**Remember:**
+- Multi-tenant isolation is CRITICAL
+- Business logic accuracy is CRITICAL
+- Data security is CRITICAL
+- Test coverage is REQUIRED
+
+Build it right. Build it secure. Build it scalable.
+
+---
+
+Last Updated: October 23, 2025
+Project Status: 50-60% Complete - Business Logic Migration Phase
+Current Priority: Implement calculation methods and financial tracking
+
